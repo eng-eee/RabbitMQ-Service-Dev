@@ -1,0 +1,62 @@
+
+services:
+  dev-env:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+
+    container_name: c_dev-env
+
+    volumes:
+      - ..:/workspaces/app-dev:cached
+
+    working_dir: /workspaces/app-dev
+
+    command: sleep infinity
+
+    networks:
+      - rabbitmq-network
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+    environment:
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+
+  rabbitmq:
+    image: rabbitmq:4-management
+
+    container_name: rabbitmq
+
+    hostname: rabbitmq
+
+    ports:
+      - "${RABBITMQ_PORT}:${RABBITMQ_PORT}"
+      - "${RABBITMQ_MANAGEMENT_PORT}:${RABBITMQ_MANAGEMENT_PORT}"
+
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+      
+    networks:
+      - rabbitmq-network
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+networks:
+  rabbitmq-network:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:

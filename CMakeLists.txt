@@ -1,61 +1,74 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(CppRabbitMQ LANGUAGES CXX)
+project(OrderProcessingSystem LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-# By default, set the build type to Debug if not specified
-set(CMAKE_BUILD_TYPE Debug)
 
-# Messaging the STATUS of the build process
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
+
 message(STATUS "CMake version: ${CMAKE_VERSION}")
-message(STATUS "Build type : ${CMAKE_BUILD_TYPE}")
-message(STATUS "CPP Version : ${CMAKE_CXX_STANDARD}")
+message(STATUS "Build type   : ${CMAKE_BUILD_TYPE}")
+message(STATUS "C++ standard : ${CMAKE_CXX_STANDARD}")
 
-
+find_package(Threads REQUIRED)
 find_package(log4cxx REQUIRED)
 
-# Collect application sources (excluding main.cc)
-file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/src/*.cc"
-)
-
-# Exclude main.cc from the application sources to avoid duplicate compilation
-# and linking the gtest main function easily
-list(FILTER APP_SOURCES EXCLUDE REGEX "/main\\.cc$")
-
-# Application object library
-add_library(app_objects OBJECT
-    ${APP_SOURCES}
-)
-
-target_include_directories(app_objects
-    PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
-        ${log4cxx_INCLUDE_DIRS}
-        ${CMAKE_SOURCE_DIR}/rabbitmq-lib/include
-)
-
-
-# External libraries for the application object library
-target_link_libraries(app_objects
-    PUBLIC
-        log4cxx
-)
-
-# Creating the main executable
-add_executable(my_app
-    src/main.cc
-)
-
-# Submodule for RabbitMQ library
+# The rmq library is part of this repository. Keep its demos/tests out of the
+# application build; the services below are the real consumers.
+set(RMQ_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(RMQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(rabbitmq-lib)
 
-# Linking external libraries to the main executable
-target_link_libraries(my_app
-    PRIVATE
-        app_objects
+# ---------------------------------------------------------------------------
+# Shared application layer: JSON, configuration, event envelope, logging and
+# the RabbitMQ service base used by every executable.
+# ---------------------------------------------------------------------------
+add_library(app_common STATIC
+    src/common/json.cc
+    src/common/config.cc
+    src/common/event.cc
+    src/common/logging.cc
+    src/common/service.cc
+)
+
+target_include_directories(app_common
+    PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/rabbitmq-lib/include
+        ${log4cxx_INCLUDE_DIRS}
+)
+
+target_link_libraries(app_common
+    PUBLIC
         log4cxx
         rmq::rmq
+        Threads::Threads
 )
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(app_common PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ---------------------------------------------------------------------------
+# One executable per service (SYS-003).
+# ---------------------------------------------------------------------------
+set(APP_EXECUTABLES
+    order_service
+    inventory_service
+    payment_service
+    notification_service
+    order_monitor_service
+    order_cli
+)
+
+foreach(executable ${APP_EXECUTABLES})
+    add_executable(${executable} src/services/${executable}/main.cc)
+    target_link_libraries(${executable} PRIVATE app_common)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${executable} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endforeach()

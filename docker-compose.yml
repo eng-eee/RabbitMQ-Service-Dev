@@ -1,0 +1,98 @@
+# Complete development stack: RabbitMQ + all order-processing services.
+#
+#   docker compose up --build
+#   docker compose --profile tools run --rm order-cli --demo
+#   open http://localhost:15672 (developer / developer123)
+#
+# Each application service is an independent container/process (SYS-003,
+# SYS-004) on one Docker network (INF-002).
+
+x-app-environment: &app-environment
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-developer}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-developer123}
+  RABBITMQ_VHOST: /
+  RABBITMQ_EXCHANGE: order.events
+  RABBITMQ_HEARTBEAT_SECONDS: "60"
+  RABBITMQ_AUTO_RECONNECT: "true"
+  INVENTORY_DEFAULT_STOCK: "100"
+  PAYMENT_FAILURE_RATE: "0.0"
+  PAYMENT_MAX_AMOUNT: "5000"
+  MONITOR_INCOMPLETE_TIMEOUT_SECONDS: "60"
+  MONITOR_INTERVAL_SECONDS: "5"
+
+x-app-service: &app-service
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: order-processing-app:dev
+  environment: *app-environment
+  networks:
+    - order-network
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: order-rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-developer}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-developer123}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - order-network
+
+  order-service:
+    <<: *app-service
+    container_name: order-service
+    command: ["/app-src/build/order_service"]
+
+  inventory-service:
+    <<: *app-service
+    container_name: inventory-service
+    command: ["/app-src/build/inventory_service"]
+
+  payment-service:
+    <<: *app-service
+    container_name: payment-service
+    command: ["/app-src/build/payment_service"]
+
+  notification-service:
+    <<: *app-service
+    container_name: notification-service
+    command: ["/app-src/build/notification_service"]
+
+  order-monitor-service:
+    <<: *app-service
+    container_name: order-monitor-service
+    command: ["/app-src/build/order_monitor_service"]
+
+  order-cli:
+    <<: *app-service
+    container_name: order-cli
+    entrypoint: ["/app-src/build/order_cli"]
+    command: ["--demo"]
+    profiles: ["tools"]
+    restart: "no"
+
+networks:
+  order-network:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:

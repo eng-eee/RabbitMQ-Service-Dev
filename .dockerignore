@@ -1,0 +1,10 @@
+.git
+.gitignore
+.devcontainer
+build
+build-*
+cmake-build-*
+*.o
+*.a
+*.so
+*.log

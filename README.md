@@ -154,3 +154,8 @@ of the same name (used by Compose):
   retains messages while a service is briefly down.
 - Handlers never block the `rmq` IO thread: all business logic and publishing
   runs on the service worker thread.
+
+  ## Example logs output
+
+  <img width="1868" height="857" alt="image" src="https://github.com/user-attachments/assets/5320822e-8a9d-4ba9-8f52-6c68d3212d90" />
+
